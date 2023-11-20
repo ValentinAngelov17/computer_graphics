@@ -26,6 +26,8 @@ SDL_GLContext gContext;
 GLuint gShaderProgID;
 GLuint gVAO, gVBO;
 
+GLint alphaLocation;
+
 void HandleKeyUp(const SDL_KeyboardEvent& key);
 
 
@@ -154,6 +156,11 @@ bool initGL()
 	gShaderProgID = CreateShaderProg();
 	gVAO = CreateCube(1.0f, gVBO);
 
+	alphaLocation = glGetUniformLocation(gShaderProgID, "alpha");
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 	return success;
 }
 
@@ -186,8 +193,12 @@ GLuint CreateShaderProg()
 {
 	const GLchar* vertexShaderSource = "#version 330 core\n"
 		"layout(location = 0) in vec3 aPos;\n"
+		"layout(location = 1) in vec3 aColor;\n"
+		"out vec3 color;\n"
 		"void main()\n"
-		"{ gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);	}\n";
+		"{ gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);"
+		" color = aColor;\n"
+		" }\n";
 
 	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
 	glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
@@ -203,8 +214,10 @@ GLuint CreateShaderProg()
 
 	const GLchar* fragmentShaderSource = "#version 330 core\n"
 		"out vec4 FragColor;\n"
+		"in vec3 color;\n"
+		"uniform float alpha;\n"
 		"void main()\n"
-		"{ FragColor = vec4(0.0f, 0.5f, 1.0f, 1.0f); }\n";
+		"{ FragColor = vec4(color, alpha); }\n";
 	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
 	glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
 	glCompileShader(fragmentShader);
@@ -235,25 +248,37 @@ GLuint CreateShaderProg()
 GLuint CreateCube(float width, GLuint& VBO)
 {
 	float vertices[] = {
-		-0.5f, -0.5f, 0.0f,
-		0.5f, -0.5f, 0.0f,
-		0.5f,  0.5f, 0.0f,
-
-		-0.5f, -0.5f, 0.0f,
-		0.5f, 0.5f, 0.0f,
-		-0.5f, 0.5f, 0.0f
+		//coordinates		//color
+		-0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f,
+		0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f,
+		0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f,
+		-0.5f, 0.5f, 0.0f, 0.0f, 0.0f, 1.0f
 	};
 
-	GLuint VAO;
+	GLuint indices[] = {
+		0, 1, 2,
+		0, 2, 3
+	};
+
+	GLuint VAO, EBO;
 	glGenBuffers(1, &VBO);
+	glGenBuffers(1, &EBO);
 	glGenVertexArrays(1, &VAO);
 
 	glBindVertexArray(VAO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0); //the data comes from the currently bound GL_ARRAY_BUFFER
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+	//coordinates attribute
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0); //the data comes from the currently bound GL_ARRAY_BUFFER
 	glEnableVertexAttribArray(0); 
+
+	//color attribute
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_TRUE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+	glEnableVertexAttribArray(1);
 
 	// note that this is allowed, the call to glVertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -262,6 +287,8 @@ GLuint CreateCube(float width, GLuint& VBO)
 	// VAOs requires a call to glBindVertexArray anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
 	glBindVertexArray(0);
 
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
 	return VAO;
 }
 
@@ -269,7 +296,14 @@ void DrawCube(GLuint vaoID)
 {
 	glUseProgram(gShaderProgID);
 	glBindVertexArray(vaoID);
-	glDrawArrays(GL_TRIANGLES, 0, 6);
+
+	GLuint time = SDL_GetTicks();
+	GLfloat alpha = (sin(time / 1000.0f) + 1) * 0.5f;
+	glUniform1f(alphaLocation, alpha);
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	//glDrawArrays(GL_TRIANGLES, 0, 6);
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (void*)0);
 	glBindVertexArray(0);
 }
 
